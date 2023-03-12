@@ -1,18 +1,8 @@
+
 from unittest import TestCase
-from flask import current_app
+# from flask import current_app
 from app import app
-from models import db, User
-
-# # Use test database and don't clutter tests with SQL
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql:///blogly_test'
-# app.config['SQLALCHEMY_ECHO'] = False
-
-# # Make Flask errors be real errors, rather than HTML pages with error info
-# app.config['TESTING'] = True
-
-# # This is a bit of hack, but don't use Flask DebugToolbar
-# app.config['DEBUG_TB_HOSTS'] = ['dont-show-debug-toolbar']
-
+from models import db, User, Post
 
 
 class usersTestcases(TestCase):
@@ -20,10 +10,11 @@ class usersTestcases(TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the test database."""
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql:///blogly_test'
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql:///test_blogly'
         app.config['SQLALCHEMY_ECHO'] = False
-        app.config['TESTING'] = True
+        app.config['TESTING'] = False
         app.config['DEBUG_TB_HOSTS'] = ['dont-show-debug-toolbar']
+        
         with app.app_context():
             db.drop_all()
             db.create_all()
@@ -33,14 +24,18 @@ class usersTestcases(TestCase):
        """Add sample User"""
            
        with app.app_context():
+            Post.query.delete()
             User.query.delete()
     
             user = User(first_name = 'Test', last_name= 'User')
             db.session.add(user)
+            post = Post(title="Test Post", content="Test Content", user=user)
+            db.session.add(post)
             db.session.commit()
     
             self.user_id = user.id
             self.user = user
+            self.post_id= post.id
        
     def tearDown(self):
        """Clean up any fouled transaction."""
@@ -52,8 +47,9 @@ class usersTestcases(TestCase):
         """Test home page redirects to user list page"""
         with app.test_client() as client:
             response = client.get('/')
-            self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.location, '/users')
+            html = response.get_data(as_text=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('Blogly Recent Posts', html)
         
     def test_user_list(self):
         """Test user list page displays all users"""
@@ -80,3 +76,34 @@ class usersTestcases(TestCase):
             html = response.get_data(as_text=True)
             self.assertEqual(response.status_code, 200)
             self.assertIn('John Doe', html)
+            
+    def test_add_post_form(self):
+        """Test new post form displays"""
+        with app.test_client() as client:
+            response = client.get(f"/users/{self.user_id}/posts/new")
+            html = response.get_data(as_text=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('Add post', html)
+            
+    def test_add_post(self):
+        """Test adding a new post"""
+
+        with app.test_client() as client:
+            response = client.post(f"/users/{self.user_id}/posts/new", data={
+                'title': 'Test Post 2',
+                'content': 'Test Content 2'
+            }, follow_redirects=True)
+            html = response.get_data(as_text=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Test Post 2", html)
+            
+    def test_post_details(self):
+        """Test post details route"""
+
+        with app.test_client() as client:
+            resp = client.get(f"/posts/{self.post_id}")
+            html = resp.get_data(as_text=True)
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("<h1>Test Post</h1>", html)
